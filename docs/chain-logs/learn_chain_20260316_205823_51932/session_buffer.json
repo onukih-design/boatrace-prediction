@@ -1,0 +1,13 @@
+{
+  "session_id": "chain_20260316_205823_51932",
+  "started_at": "2026-03-16T11:58:23Z",
+  "patterns": [],
+  "errors": [],
+  "decisions": [],
+  "metrics": {
+    "total_captures": 0,
+    "success_patterns": 0,
+    "error_patterns": 0,
+    "applied_learnings": 0
+  }
+}
