@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// 競艇場マスタ
+// ========================================
+model Venue {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // 01〜24
+  name      String
+  prefecture String
+  races     Race[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========================================
+// 選手マスタ
+// ========================================
+model Racer {
+  id           Int      @id @default(autoincrement())
+  registrationNo String @unique // 登録番号
+  name         String
+  branch       String?  // 支部
+  birthDate    DateTime?
+  rank         String?  // A1, A2, B1, B2
+  winRate      Float    @default(0) // 全国勝率
+  biaxialRate  Float    @default(0) // 2連対率
+  triaxialRate Float    @default(0) // 3連対率
+  entries      RaceEntry[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ========================================
+// モーターマスタ
+// ========================================
+model Motor {
+  id           Int      @id @default(autoincrement())
+  motorNo      String
+  venueId      Int
+  biaxialRate  Float    @default(0)  // 2連対率
+  triaxialRate Float    @default(0)  // 3連対率
+  entries      RaceEntry[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([motorNo, venueId])
+}
+
+// ========================================
+// ボートマスタ
+// ========================================
+model Boat {
+  id           Int      @id @default(autoincrement())
+  boatNo       String
+  venueId      Int
+  biaxialRate  Float    @default(0)
+  triaxialRate Float    @default(0)
+  entries      RaceEntry[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([boatNo, venueId])
+}
+
+// ========================================
+// レース
+// ========================================
+model Race {
+  id          Int      @id @default(autoincrement())
+  raceDate    DateTime
+  venueId     Int
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  raceNumber  Int      // 第何レース（1〜12）
+  raceTitle   String?
+  deadline    DateTime?
+  weather     String?
+  windSpeed   Float?
+  windDirection String?
+  waveHeight  Float?
+  entries     RaceEntry[]
+  predictions Prediction[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([raceDate, venueId, raceNumber])
+  @@index([raceDate])
+  @@index([venueId])
+}
+
+// ========================================
+// レースエントリー（出走表）
+// ========================================
+model RaceEntry {
+  id          Int      @id @default(autoincrement())
+  raceId      Int
+  race        Race     @relation(fields: [raceId], references: [id])
+  lane        Int      // 枠番（1〜6）
+  racerId     Int
+  racer       Racer    @relation(fields: [racerId], references: [id])
+  motorId     Int?
+  motor       Motor?   @relation(fields: [motorId], references: [id])
+  boatId      Int?
+  boat        Boat?    @relation(fields: [boatId], references: [id])
+  weight      Float?
+  exhibitionTime Float? // 展示タイム
+  tiltAngle   Float?   // チルト角度
+  startTiming Float?   // STタイミング
+  result      Int?     // 着順（1〜6, null=未確定）
+  startResult String?  // スタート結果（F, L0, etc.）
+  raceTime    String?  // レースタイム
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([raceId, lane])
+  @@index([racerId])
+  @@index([raceId])
+}
+
+// ========================================
+// 予想
+// ========================================
+model Prediction {
+  id          Int      @id @default(autoincrement())
+  raceId      Int
+  race        Race     @relation(fields: [raceId], references: [id])
+  lane        Int      // 予想対象の枠番
+  score       Float    // 総合スコア
+  rank        Int      // 予想順位（1〜6）
+  factors     String   // JSON: スコア内訳
+  isHit       Boolean? // 的中したか（レース確定後に更新）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([raceId, lane])
+  @@index([raceId])
+}
+
+// ========================================
+// LINE ユーザー
+// ========================================
+model LineUser {
+  id            Int      @id @default(autoincrement())
+  lineUserId    String   @unique // LINEのユーザーID
+  displayName   String?
+  pictureUrl    String?
+  statusMessage String?
+  isActive      Boolean  @default(true) // ブロック解除=true
+  isBlocked     Boolean  @default(false)
+  joinedAt      DateTime @default(now())
+  lastActiveAt  DateTime @default(now())
+  settings      UserSetting?
+  notifications DeliveryLog[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// ========================================
+// ユーザー設定
+// ========================================
+model UserSetting {
+  id                Int      @id @default(autoincrement())
+  lineUserId        Int      @unique
+  lineUser          LineUser @relation(fields: [lineUserId], references: [id])
+  favoriteVenues    String   @default("[]") // JSON: お気に入り競艇場コード
+  notifyBeforeRace  Boolean  @default(true) // レース前通知
+  notifyResult      Boolean  @default(true) // 結果通知
+  notifyTopPicks    Boolean  @default(true) // 上位予想通知
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ========================================
+// 配信ログ
+// ========================================
+model DeliveryLog {
+  id          Int      @id @default(autoincrement())
+  lineUserId  Int
+  lineUser    LineUser @relation(fields: [lineUserId], references: [id])
+  messageType String   // prediction, result, notification
+  content     String   // 配信内容
+  status      String   @default("sent") // sent, failed, read
+  sentAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([lineUserId])
+  @@index([sentAt])
+}
+
+// ========================================
+// 管理者
+// ========================================
+model Admin {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  password    String   // bcryptハッシュ
+  name        String?
+  role        String   @default("admin") // admin, super_admin
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ========================================
+// スクレイピングジョブ
+// ========================================
+model ScrapeJob {
+  id          Int      @id @default(autoincrement())
+  jobType     String   // race_list, race_result, racer_info, motor_info
+  targetDate  DateTime?
+  venueCode   String?
+  status      String   @default("pending") // pending, running, completed, failed
+  result      String?  // JSON: 結果サマリ
+  errorMessage String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+}
+
+// ========================================
+// 的中履歴集計
+// ========================================
+model HitSummary {
+  id            Int      @id @default(autoincrement())
+  targetDate    DateTime
+  totalRaces    Int      @default(0)
+  predictedRaces Int     @default(0)
+  hitCount      Int      @default(0)
+  hitRate       Float    @default(0)
+  topPickHits   Int      @default(0)  // 上位予想の的中数
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([targetDate])
+}
